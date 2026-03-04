@@ -4,14 +4,14 @@
 import { useState } from "react";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, getDocs, query, where } from "firebase/firestore";
+// NEW: Import the Google AI library
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export default function CreateEvent() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [checkingVenue, setCheckingVenue] = useState(false);
   const [venueStatus, setVenueStatus] = useState<"idle" | "available" | "conflict">("idle");
-  
-  // NEW: State for AI thinking animation
   const [isGenerating, setIsGenerating] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -19,24 +19,10 @@ export default function CreateEvent() {
     description: "",
     category: "Hackathon",
     max_participants: 50,
-    banner_image_url: "",
     event_date: "",
     start_time: "09:00",
     end_time: "17:00",
     venue: "Seminar Hall B",
-    staff_support: 0,
-    staff_security: 0,
-    staff_volunteers: 0,
-    eq_projector: false,
-    eq_microphone: false,
-    eq_speakers: false,
-    eq_laptop: false,
-    eq_whiteboard: false,
-    fac_wifi: false,
-    fac_ac: false,
-    extension_cords: 0,
-    req_livestream: false,
-    req_photography: false,
     maintenance_notes: "",
   });
 
@@ -51,8 +37,8 @@ export default function CreateEvent() {
     }
   };
 
-  // --- NEW: AI GENERATOR FUNCTION ---
-  const generateDescription = () => {
+  // --- 🚀 REAL AI GENERATOR FUNCTION ---
+  const generateDescription = async () => {
     if (!formData.title) {
       alert("Please enter an Event Title first so the AI knows what to write about!");
       return;
@@ -60,21 +46,26 @@ export default function CreateEvent() {
     
     setIsGenerating(true);
 
-    // Fake AI delay for the "Wow" factor
-    setTimeout(() => {
-      const templates = {
-        "Hackathon": `Join us for an electrifying coding marathon! "${formData.title}" is designed to push your technical limits, foster collaboration, and solve real-world problems. Bring your best ideas, form an elite team, and build the future.`,
-        "Workshop": `Dive deep into hands-on learning with "${formData.title}". This interactive workshop will equip you with practical, industry-standard skills guided by experts. Perfect for students looking to upgrade their technical toolkit.`,
-        "Seminar": `Expand your knowledge at "${formData.title}". Hear directly from industry leaders, gain valuable insights into the latest tech trends, and discover what the future holds. Don't miss this opportunity to network and learn from the best.`,
-        "Cultural": `Get ready to celebrate creativity and talent at "${formData.title}"! Join us for a spectacular showcase of art, music, and performances that will leave you mesmerized. Bring your friends and make unforgettable memories!`,
-        "Sports": `Bring your A-game to "${formData.title}"! Compete with top talent across the campus, show off your athletic skills, and experience the thrill of victory in this high-energy sporting event.`
-      };
+    try {
+      // 1. Initialize Gemini (PASTE YOUR ACTUAL API KEY HERE)
+      const genAI = new GoogleGenerativeAI("AIzaSyCdjwjSDSeLrEIUCcdPjdjCc6SdhwOI5EQ");
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-      const generatedText = templates[formData.category as keyof typeof templates] || templates["Hackathon"];
+      // 2. Give the AI a specific prompt based on what you typed
+      const prompt = `Write an exciting, professional, and engaging 3-sentence event description for a college ${formData.category} titled "${formData.title}". Make it sound appealing to engineering students. Do not use hashtags.`;
 
-      setFormData(prev => ({ ...prev, description: generatedText }));
+      // 3. Call the API and wait for it to think
+      const result = await model.generateContent(prompt);
+      const generatedText = result.response.text();
+
+      // 4. Update the text box!
+      setFormData(prev => ({ ...prev, description: generatedText.trim() }));
+    } catch (error) {
+      console.error("AI Error:", error);
+      alert("AI Generation failed. Did you paste your API key?");
+    } finally {
       setIsGenerating(false);
-    }, 1500);
+    }
   };
 
   const checkAvailability = async () => {
@@ -122,8 +113,8 @@ export default function CreateEvent() {
     try {
       await addDoc(collection(db, "events"), formData);
 
-      // Trigger n8n Webhook for Email (Make sure to keep your real URL if you had one!)
-      await fetch("https://snehashenoy.app.n8n.cloud/webhook-test/d01c74c5-b93d-4596-ad5b-b2a0862ac618", {
+      // Trigger n8n Webhook for Email
+      await fetch("https://snehashenoy.app.n8n.cloud/webhook-test/b3dba974-2b58-4948-8438-4f293973d020", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
@@ -150,7 +141,7 @@ export default function CreateEvent() {
               <input type="text" name="title" required value={formData.title} onChange={handleChange} className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="e.g., Annual Hackathon 2026" />
             </div>
             
-            {/* UPDATED DESCRIPTION BOX WITH AI BUTTON */}
+            {/* REAL AI GENERATOR BUTTON */}
             <div>
               <div className="flex justify-between items-end mb-1">
                 <label className="block text-sm font-medium text-slate-700">Description</label>
@@ -160,7 +151,7 @@ export default function CreateEvent() {
                   disabled={isGenerating}
                   className="text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-md flex items-center gap-1 transition-colors disabled:opacity-50"
                 >
-                  {isGenerating ? "Thinking..." : "✨ Auto-Generate with AI"}
+                  {isGenerating ? "🤖 AI is thinking..." : "✨ Auto-Generate with AI"}
                 </button>
               </div>
               <textarea name="description" required value={formData.description} onChange={handleChange} className="w-full p-3 border border-slate-200 rounded-lg h-32 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Describe your event..."></textarea>
@@ -215,7 +206,7 @@ export default function CreateEvent() {
         <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100">
           <h2 className="text-xl font-semibold mb-6 flex items-center gap-2"><span>🛠️</span> Maintenance Requirements</h2>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Additional Notes for Maintenance</label>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Additional Notes</label>
             <textarea name="maintenance_notes" value={formData.maintenance_notes} onChange={handleChange} className="w-full p-3 border border-slate-200 rounded-lg h-20 outline-none" placeholder="e.g. need 50 chairs"></textarea>
           </div>
         </div>

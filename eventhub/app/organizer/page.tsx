@@ -1,58 +1,100 @@
 // app/organizer/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { db } from "@/lib/firebase";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, addDoc } from "firebase/firestore";
 
 export default function OrganizerDashboard() {
   const [pastEvents, setPastEvents] = useState<any[]>([]);
   const [stats, setStats] = useState({ totalEvents: 0, totalParticipants: 0 });
   const [loading, setLoading] = useState(true);
+  
+  // This shield prevents React Strict Mode from double-injecting the data!
+  const hasRun = useRef(false); 
 
   useEffect(() => {
+    if (hasRun.current) return; // If it already ran, stop!
+    hasRun.current = true;      // Mark it as run
     fetchDashboardData();
   }, []);
 
   async function fetchDashboardData() {
     try {
-      // Get today's date to separate past events from future events
       const today = new Date().toISOString().split('T')[0];
 
-      // Fetch all events from Firebase
-      const eventsSnap = await getDocs(collection(db, "events"));
+      // 1. Fetch events to check if database is empty
+      let eventsSnap = await getDocs(collection(db, "events"));
+
+      // 2. AUTO-SEEDER: If empty, inject data securely
+      if (eventsSnap.empty) {
+        console.log("Database empty. Safely auto-injecting demo data...");
+
+        // --- PAST EVENTS (For Hall of Fame) ---
+        const e1 = await addDoc(collection(db, "events"), {
+          title: "HackAI: GenAI Hackathon 2026", description: "A 24-hour intense hackathon focusing on building real-world AI applications.",
+          category: "Hackathon", event_date: "2026-02-20", start_time: "09:00", end_time: "18:00", venue: "Computer Lab 1", max_participants: 120
+        });
+        await addDoc(collection(db, "registrations"), {
+          event_id: e1.id, event_title: "HackAI: GenAI Hackathon 2026", student_name: "Sneha", department: "AIML", year: "3rd Year", ticket_id: "TKT-DEMO1", attended: true, points: 200
+        });
+
+        const e2 = await addDoc(collection(db, "events"), {
+          title: "Sinchana Cultural Fest", description: "The biggest cultural extravaganza of the year! Music, dance, and art.",
+          category: "Cultural", event_date: "2026-02-28", start_time: "17:00", end_time: "22:00", venue: "Auditorium", max_participants: 500
+        });
+        await addDoc(collection(db, "registrations"), {
+          event_id: e2.id, event_title: "Sinchana Cultural Fest", student_name: "Rahul Sharma", department: "Mechanical", year: "4th Year", ticket_id: "TKT-DEMO2", attended: true, points: 150
+        });
+
+        const e3 = await addDoc(collection(db, "events"), {
+          title: "Sahyadri Tech Seminar", description: "Industry experts from top tech companies share insights on cloud computing.",
+          category: "Seminar", event_date: "2026-03-01", start_time: "10:00", end_time: "13:00", venue: "Seminar Hall B", max_participants: 100
+        });
+        await addDoc(collection(db, "registrations"), {
+          event_id: e3.id, event_title: "Sahyadri Tech Seminar", student_name: "Alex Mitchell", department: "Computer Science", year: "2nd Year", ticket_id: "TKT-DEMO3", attended: true, points: 50
+        });
+
+        // --- FUTURE EVENTS (For Explore Page) ---
+        await addDoc(collection(db, "events"), {
+          title: "Robotics Workshop: Build a Bot", description: "Learn the basics of Arduino, sensors, and motor controls to build your first robot.",
+          category: "Workshop", event_date: "2026-03-20", start_time: "14:00", end_time: "17:00", venue: "Electronics Lab", max_participants: 40
+        });
+        await addDoc(collection(db, "events"), {
+          title: "Web3 & Blockchain Ideathon", description: "Pitch your decentralized app ideas to a panel of blockchain investors.",
+          category: "Hackathon", event_date: "2026-03-25", start_time: "10:00", end_time: "15:00", venue: "Seminar Hall B", max_participants: 80
+        });
+        await addDoc(collection(db, "events"), {
+          title: "Open Source Contribution Drive", description: "Learn how to make your first pull request on GitHub and contribute to major projects.",
+          category: "Workshop", event_date: "2026-04-05", start_time: "15:00", end_time: "18:00", venue: "Computer Lab 2", max_participants: 60
+        });
+
+        // Re-fetch now that we have safely added the data
+        eventsSnap = await getDocs(collection(db, "events"));
+      }
+
       const events: any[] = [];
       eventsSnap.forEach((doc) => events.push({ id: doc.id, ...doc.data() }));
 
-      // Fetch all registrations from Firebase
+      // 3. Fetch registrations
       const regSnap = await getDocs(collection(db, "registrations"));
       const regs: any[] = [];
       regSnap.forEach((doc) => regs.push(doc.data()));
 
-      setStats({
-        totalEvents: events.length,
-        totalParticipants: regs.length,
-      });
+      setStats({ totalEvents: events.length, totalParticipants: regs.length });
 
-      // Filter events that happened before today and find the highest scorer
+      // 4. Calculate Hall of Fame
       const past = events
         .filter(e => e.event_date && e.event_date < today)
         .map(event => {
-          // Find everyone registered for THIS specific event
           const eventRegs = regs.filter(r => r.event_id === event.id || r.event_title === event.title);
-          
           let winner = null;
           if (eventRegs.length > 0) {
-            // Find the person with the highest points
             winner = eventRegs.reduce((prev, current) => ((prev.points || 0) > (current.points || 0)) ? prev : current);
           }
-
-          return {
-            ...event,
-            winner: winner && winner.points > 0 ? winner : null
-          };
+          return { ...event, winner: winner && winner.points > 0 ? winner : null };
         })
-        .sort((a, b) => b.event_date.localeCompare(a.event_date)); // Sort to show most recent first
+        .sort((a, b) => b.event_date.localeCompare(a.event_date));
 
       setPastEvents(past);
     } catch (error) {
